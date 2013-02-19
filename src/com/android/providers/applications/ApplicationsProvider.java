@@ -75,6 +75,7 @@ public class ApplicationsProvider extends ContentProvider {
 
     // Messages for mHandler
     private static final int MSG_UPDATE_ALL = 0;
+    private static final int MSG_UPDATE_PACKAGE = 1;
 
     public static final String _ID = "_id";
     public static final String NAME = "name";
@@ -132,6 +133,11 @@ public class ApplicationsProvider extends ContentProvider {
         public void onSomePackagesChanged() {
             postUpdateAll();
         }
+
+        @Override
+        public void onPackageModified(String packageName) {
+            postUpdatePackage(packageName);
+        }
     }
 
     // Broadcast receiver for updating applications list when the locale changes.
@@ -152,7 +158,7 @@ public class ApplicationsProvider extends ContentProvider {
         // Start thread that runs app updates
         HandlerThread thread = new HandlerThread("ApplicationsProviderUpdater", THREAD_PRIORITY);
         thread.start();
-        mHandler = new UpdateHandler(thread.getLooper());
+        mHandler = createHandler(thread.getLooper());
         // Kick off first apps update
         postUpdateAll();
         // Listen for package changes
@@ -163,8 +169,11 @@ public class ApplicationsProvider extends ContentProvider {
         return true;
     }
 
-    private class UpdateHandler extends Handler {
+    Handler createHandler(Looper looper) {
+        return new UpdateHandler(looper);
+    }
 
+    class UpdateHandler extends Handler {
         public UpdateHandler(Looper looper) {
             super(looper);
         }
@@ -174,6 +183,9 @@ public class ApplicationsProvider extends ContentProvider {
             switch (msg.what) {
                 case MSG_UPDATE_ALL:
                     updateApplicationsList(null);
+                    break;
+                case MSG_UPDATE_PACKAGE:
+                    updateApplicationsList((String) msg.obj);
                     break;
                 default:
                     Log.e(TAG, "Unknown message: " + msg.what);
@@ -191,6 +203,13 @@ public class ApplicationsProvider extends ContentProvider {
         // Post a new update
         Message msg = Message.obtain();
         msg.what = MSG_UPDATE_ALL;
+        mHandler.sendMessageDelayed(msg, UPDATE_DELAY_MILLIS);
+    }
+
+    private void postUpdatePackage(String packageName) {
+        Message msg = Message.obtain();
+        msg.what = MSG_UPDATE_PACKAGE;
+        msg.obj = packageName;
         mHandler.sendMessageDelayed(msg, UPDATE_DELAY_MILLIS);
     }
 
@@ -439,15 +458,17 @@ public class ApplicationsProvider extends ContentProvider {
             for (int i = 0; i < activityCount; i++) {
                 ResolveInfo info = activities.get(i);
                 String title = info.loadLabel(manager).toString();
+                String activityClassName = info.activityInfo.name;
                 if (TextUtils.isEmpty(title)) {
-                    title = info.activityInfo.name;
+                    title = activityClassName;
                 }
                 String icon = getActivityIconUri(info.activityInfo);
+                String activityPackageName = info.activityInfo.applicationInfo.packageName;
                 inserter.prepareForInsert();
                 inserter.bind(nameCol, title);
                 inserter.bind(descriptionCol, description);
-                inserter.bind(packageCol, info.activityInfo.applicationInfo.packageName);
-                inserter.bind(classCol, info.activityInfo.name);
+                inserter.bind(packageCol, activityPackageName);
+                inserter.bind(classCol, activityClassName);
                 inserter.bind(iconCol, icon);
                 inserter.execute();
             }
